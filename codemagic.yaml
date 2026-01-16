@@ -1,0 +1,292 @@
+definitions: 
+  env_versions: &env_versions
+    flutter: stable
+  scripts:
+    - &get_flutter_packages
+      name: Get Flutter packages
+      script: |
+        flutter packages pub get
+    - &analyze_flutter
+      name: Flutter analyze
+      script: |
+        flutter analyze
+    - &flutter_unit_tests
+      name: Flutter unit tests
+      script: |
+        flutter test
+    - &flutter_build_webapp
+      name: Flutter build webapp
+      script: |
+        flutter build web --release
+        cd build/web
+        7z a -r ../web.zip ./*
+
+
+workflows:
+
+  ios-yaml-workflow:
+    name: iOS Workflow
+    #instance_type: mac_mini_m2
+    max_build_duration: 120
+    integrations:
+      app_store_connect: ivan-codemagic-demo
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: '*'
+          include: true
+          source: true
+      cancel_previous_builds: false
+    environment:
+      xcode: 16.4
+      groups:
+        - keystore_credentials
+        - google_play
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: io.codemagic.ivan.wfedemo
+      vars:
+        APP_ID: 6677026826 # <-- Use the TestFlight Apple id number (An automatically generated ID assigned to your app) found under General > App Information > Apple ID.
+      flutter: stable
+    scripts:
+      - name: Melos&bootstrap
+        script: |
+          echo "FLUTTER_ROOT is set to: $FLUTTER_ROOT"
+          echo "CM_BUILD_DIR is set to: $CM_BUILD_DIR"
+          
+          if [ -d "$CM_BUILD_DIR/.fvm/" ]; then
+            echo "$CM_BUILD_DIR/.fvm/ exists."
+          else
+            echo "$CM_BUILD_DIR/.fvm/ does not exist, creating it now."
+            mkdir -p $CM_BUILD_DIR/.fvm/
+          fi
+          
+          ln -s $FLUTTER_ROOT $CM_BUILD_DIR/.fvm/flutter_sdk
+          echo "Symbolic link created."
+          echo "Verifying symbolic link..."
+          ls -l $CM_BUILD_DIR/.fvm/flutter_sdk
+          $CM_BUILD_DIR/.fvm/flutter_sdk/bin/flutter --version
+          
+          # Run commands that might fail, but continue if they do
+          dart pub global activate flutterfire_cli || echo "FlutterFire CLI activation failed, continuing..."
+          dart pub global activate melos || echo "Melos activation failed, continuing..."
+          melos bootstrap || echo "Melos bootstrap failed, continuing..."
+  
+      - name: Machine Specs
+        script: |
+          echo "Machine: $(sysctl -n machdep.cpu.brand_string)"
+          echo "CPU cores: $(sysctl -n hw.physicalcpu) physical / $(sysctl -n hw.logicalcpu) logical"
+          echo "RAM: $(($(sysctl -n hw.memsize) / 1024 / 1024 / 1024)) GB"
+
+      - name: Set up code signing settings on Xcode project
+        script: | 
+          xcode-project use-profiles
+      - name: Get Flutter packages
+        script: | 
+          flutter pub get
+      - name: Install pods
+        script: | 
+          find . -name "Podfile" -execdir pod install \;
+      - name: Flutter analyze
+        script: | 
+          flutter analyze
+      - name: Flutter unit tests
+        script: | 
+          flutter test
+        ignore_failure: true
+      - name: Flutter build ipa
+        script: | 
+          BUILD_NUMBER=$(($(app-store-connect get-latest-app-store-build-number "$APP_ID") + 2))
+          flutter build ipa --release \
+            --build-name=1.0.$BUILD_NUMBER \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          - ivan@codemagic.io
+          - user_2@example.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration
+
+        # Configuration related to TestFlight (optional)
+        # Note: This action is performed during post-processing.
+        submit_to_testflight: false
+        beta_groups: # Specify the names of beta tester groups that will get access to the build once it has passed beta review.
+          - group name 1
+          - group name 2
+
+        # Configuration related to App Store (optional)
+        # Note: This action is performed during post-processing.
+        submit_to_app_store: false
+
+
+  ios-unsigned-workflow:
+    name: iOS Unsigned Workflow
+    max_build_duration: 90
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: '*'
+          include: true
+          source: true
+    environment:
+      xcode: 16.4
+      flutter: stable
+    cache:
+      cache_paths:
+        - $FLUTTER_ROOT/.pub-cache    # Dart packages cache
+        - $HOME/.gradle/caches        # Android Gradle cache
+        - $HOME/Library/Caches/CocoaPods # CocoaPods cache for iOS dependencies
+    scripts:
+      - name: Melos & bootstrap
+        script: |
+          echo "Setting up Melos and FlutterFire CLI"
+          dart pub global activate flutterfire_cli || echo "FlutterFire CLI activation failed, continuing..."
+          dart pub global activate melos || echo "Melos activation failed, continuing..."
+          melos bootstrap || echo "Melos bootstrap failed, continuing..."
+      - *get_flutter_packages
+      - name: Install CocoaPods
+        script: |
+          find . -name "Podfile" -execdir pod install \;
+      - *analyze_flutter
+      - name: Flutter unit tests
+        script: |
+          flutter test
+        ignore_failure: true
+      - name: Flutter build unsigned ipa
+        script: |
+          flutter build ipa --release --no-codesign
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - build/ios/archive/*.xcarchive
+      - build/ios/Runner.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+
+  android-workflow:
+    name: Android Workflow
+    #instance_type: mac_mini_m4
+    max_build_duration: 60
+    environment:
+      groups:
+        - keystore_credentials
+        - google_play
+      vars:
+        PACKAGE_NAME: "io.codemagic.ivan.wfedemo"
+        GOOGLE_PLAY_TRACK: internal
+        submit_as_draft: true
+      flutter: stable  #or we can write << : *env_versions
+      android_signing:
+        - android_keystore
+    cache:
+      cache_paths:
+        - ~/.gradle/caches
+
+    scripts:
+      - name: Set up code signing settings on Xcode project
+        script: xcode-project use-profiles
+      - name: Set up local.properties
+        script: |
+          echo "flutter.sdk=$HOME/programs/flutter" > "$CM_BUILD_DIR/android/local.properties"
+      - name: Get Flutter packages
+        script: |
+          flutter packages pub get
+      - name: Flutter analyze
+        script: |
+          flutter analyze
+      - name: Flutter unit tests
+        script: |
+          flutter test
+        ignore_failure: true
+      - name: Build AAB with Flutter
+        script: |   
+          BUILD_NUMBER=$(($(google-play get-latest-build-number --package-name "$PACKAGE_NAME" --tracks="$GOOGLE_PLAY_TRACK") + 1))      
+          flutter build appbundle --release \
+            --build-name=1.0.$BUILD_NUMBER \
+            --build-number=$BUILD_NUMBER
+
+    artifacts:
+      - build/**/outputs/**/*.aab
+      - build/**/outputs/**/mapping.txt
+      - flutter_drive.log
+    publishing:
+      email:
+        recipients:
+          - user_1@example.com
+          - user_2@example.com
+        notify:
+          success: true
+          failure: false
+      scripts:
+        - echo 'Post-publish script'
+  
+  web-workflow:
+    name: Web app workflow
+    max_build_duration: 10
+    environment:
+      << : *env_versions
+      groups:
+        - keystore_credentials
+        - google_play
+    scripts:
+      - *get_flutter_packages
+      - *analyze_flutter
+      - *flutter_unit_tests
+      - *flutter_build_webapp
+    artifacts:
+      - build/web.zip
+      - flutter_drive.log
+  
+  flutter-ios-simulator:
+    name: Flutter iOS Simulator
+    environment:
+      flutter: 3.27.3
+      xcode: 16.3
+    scripts:
+
+      - name: Machine Specs
+        script: |
+          echo "Machine: $(sysctl -n machdep.cpu.brand_string)"
+          echo "CPU cores: $(sysctl -n hw.physicalcpu) physical / $(sysctl -n hw.logicalcpu) logical"
+          echo "RAM: $(($(sysctl -n hw.memsize) / 1024 / 1024 / 1024)) GB"
+          echo "GPU Info:"
+          system_profiler SPDisplaysDataType
+          
+      - name: Run Flutter pub get
+
+        script: flutter pub get
+
+      - name: Build unsigned .app for simulator
+
+        script: flutter build ios --simulator
+
+    artifacts:
+
+      - build/ios/iphonesimulator/Runner.app
+
+
+  android-simulator:
+    name: Android debug workflow
+    scripts:
+      - name: Set Android SDK location
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"          
+      - name: Build Android
+        script: |
+          gradle init
+          gradle wrapper
+                    
+    artifacts:
+      - app/build/outputs/apk/debug/app-debug.apk

@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "933793358764",
+    "project_id": "ivancodemagicdemo",
+    "storage_bucket": "ivancodemagicdemo.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:933793358764:android:0aab0e1f8a7bfdd9599009",
+        "android_client_info": {
+          "package_name": "io.codemagic.ivan.android"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCHxF5oTOjlC0qoBdSWWiX5x4iHECrePiY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:933793358764:android:e67d50b478cc6d72599009",
+        "android_client_info": {
+          "package_name": "io.codemagic.ivan.wfedemo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCHxF5oTOjlC0qoBdSWWiX5x4iHECrePiY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:933793358764:android:6c514e04065ede35599009",
+        "android_client_info": {
+          "package_name": "io.codemagic.ivanwfe"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCHxF5oTOjlC0qoBdSWWiX5x4iHECrePiY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
